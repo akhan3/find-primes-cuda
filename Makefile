@@ -43,7 +43,7 @@ CU_DEPS		:= \
 
 # C/C++ source files (compiled with gcc / c++)
 CCFILES		:= \
-	countprimes_golden.cpp \
+# 	countprimes_golden.cpp \
 
 # NVCCFLAGS	:= --keep
 
