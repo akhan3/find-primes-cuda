@@ -1,0 +1,7 @@
+# use glob syntax.
+syntax: glob
+obj/*
+
+# switch to regexp syntax.
+#syntax: regexp
+#^\.pc/
