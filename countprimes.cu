@@ -28,13 +28,13 @@ void findPrimes(uint64 ulimit, byte* array) {
     }
 }
 
-uint64 countPrimes_range(uint64 llimit, uint64 ulimit, byte* precomputed_primes, byte* array) {
+void countPrimes_range(uint64 llimit, uint64 ulimit, byte* precomputed_primes, byte* array) {
     if(llimit == 0) {
-        CLR_BIT(array, 0);
-        CLR_BIT(array, 1);
+        CLR_BYTE(array, 0);
+        CLR_BYTE(array, 1);
     }
     else if(llimit == 1) {
-        CLR_BIT(array, 0);
+        CLR_BYTE(array, 0);
     }
     uint64 thisFactor = 17;
     uint64 mark;
@@ -45,8 +45,8 @@ uint64 countPrimes_range(uint64 llimit, uint64 ulimit, byte* precomputed_primes,
             first_multiple++;
         mark = first_multiple;
         while(mark <= ulimit) {
-            if(GET_BIT(array, mark-llimit))
-                CLR_BIT(array, mark-llimit);
+            if(GET_BYTE(array, mark-llimit))
+                CLR_BYTE(array, mark-llimit);
             mark += thisFactor;
         }
         do  // Search for the next prime divisor
@@ -54,29 +54,24 @@ uint64 countPrimes_range(uint64 llimit, uint64 ulimit, byte* precomputed_primes,
         while(GET_BIT(precomputed_primes, thisFactor-1) == 0);
         assert(thisFactor <= ulimit);
     }
-    uint64 prime_counter = 0;
-    for(uint64 i = llimit; i <= ulimit; i++)
-        if(GET_BIT(array, i-llimit))
-            prime_counter++;
-    return prime_counter;
 }
 
 void markPrimesPattern(uint64 llimit, uint64 ulimit, uint64 top_divisor, byte* precomputed_primes, byte* array) {
     for(uint64 i = llimit; i <= ulimit; i++)
-        SET_BIT(array, i-llimit);
+        SET_BYTE(array, i-llimit);
     uint64 thisFactor = 2;
     uint64 mark;
     while(thisFactor <= top_divisor && thisFactor*thisFactor <= ulimit) {
         mark = llimit - 1 + thisFactor;
 //         printf("thisFactor = %llu\n", thisFactor);
         while(mark <= ulimit) {
-            CLR_BIT(array, mark-llimit);
+            CLR_BYTE(array, mark-llimit);
 //             printf("  thisFactor=%llu, mark=%llu, (mark-llimit)=%llu, (mark-llimit)>>3=%llu\n", thisFactor, mark, mark-llimit, (mark-llimit)>>3);
             mark += thisFactor;
         }
         do  // Search for the next prime divisor in precomputed_primes
             thisFactor++;
-        while(GET_BIT(precomputed_primes, thisFactor-1) == 0);
+        while(GET_BYTE(precomputed_primes, thisFactor-1) == 0);
         assert(thisFactor <= ulimit);
     }
 }
@@ -94,10 +89,9 @@ int main(int argc, char *argv[]) {
     assert(ulimit <= 274877906944);
     printf("Counting primes in the interval [%llu, %llu]...\n", llimit, ulimit);
 
-    const uint64 SIXTYFOUR_KB = 65536;
     uint64 precomputed_top = SIXTYFOUR_KB * 8;    // 524,288
     byte precomputed_primes[SIXTYFOUR_KB];
-    findPrimes(precomputed_top, &precomputed_primes[0]);
+    findPrimes(precomputed_top, precomputed_primes);
 
     uint64 prime_counter = 0;
 
@@ -120,24 +114,27 @@ int main(int argc, char *argv[]) {
         printf("%llu primes found between [%llu, %llu]\n", prime_counter, llimit, precomputed_top);
     }
 
-    byte* precomputed_pattern = 0;    // pattern of marked non-primes which are multiples of (2,3,5,7,11,13)
-    precomputed_pattern = (byte*)malloc(15015);
-    markPrimesPattern(1, 120120, 13, &precomputed_primes[0], &precomputed_pattern[0]);
-//     for(uint64 i = 1; i <= 120120; i++)
-//         printf("%2llu : %u\n", i, GET_BIT(precomputed_pattern, i-1));
+    byte* precomputed_pattern = NULL;    // pattern of marked non-primes which are multiples of (2,3,5,7,11,13)
+    precomputed_pattern = (byte*)malloc(120120);    // byte-wise array
+    markPrimesPattern(1, 120120, 13, precomputed_primes, precomputed_pattern);
 
-    // now using GPU...
-    cutilSafeCall(cudaMemcpyToSymbol(d_precomputed_primes, precomputed_primes, SIXTYFOUR_KB));
+// memory allocation
+    uint64 num_bytes = ulimit-llimit+1;
+    printf("num_bytes = %llu, %.2fMB\n", num_bytes, num_bytes/1024.0/1024.0);
+    byte* all_primes = NULL;
+    all_primes = (byte*)malloc(num_bytes);
+    for (uint32 i = 0; i < num_bytes; i += 120120)
+        memcpy(all_primes+i, precomputed_pattern, 120120);
+//         printf("i=%6u, i+120120=%6u\n", i, i+120120);
+
+
+// now using GPU...
     // allocate device memory
-    byte* d_all_primes = 0;
-    uint64 delta = ulimit-llimit+1;
-    uint64 num_bytes = ceil((delta)/8.0);
+    cutilSafeCall(cudaMemcpyToSymbol(d_precomputed_primes, precomputed_primes, SIXTYFOUR_KB));
+    byte* d_all_primes = NULL;
     cutilSafeCall(cudaMalloc(&d_all_primes, num_bytes));
     // copy host memory to device
-    for (uint32 i = 0; i < num_bytes; i += 15015) {
-        cutilSafeCall(cudaMemcpy(d_all_primes+i, precomputed_pattern, 15015, cudaMemcpyHostToDevice));
-//         printf("i=%6u, i+15015=%6u\n", i, i+15015);
-    }
+    cutilSafeCall(cudaMemcpy(d_all_primes, all_primes, num_bytes, cudaMemcpyHostToDevice));
 
     uint32 timer_cpu = 0; cutilCheckError(cutCreateTimer(&timer_cpu));
     uint32 timer_gpu = 0; cutilCheckError(cutCreateTimer(&timer_gpu));
@@ -155,31 +152,35 @@ int main(int argc, char *argv[]) {
     float time_gpu = cutGetTimerValue(timer_gpu);
     cutilCheckError(cutDeleteTimer(timer_gpu));
 
+    byte* all_primes_gpu_result = NULL;
+    all_primes_gpu_result = (byte*)malloc(num_bytes);
+    cutilSafeCall(cudaMemcpy(all_primes_gpu_result, d_all_primes, num_bytes, cudaMemcpyDeviceToHost));
 
-    byte* all_primes = 0;
-    all_primes = (byte*)malloc(num_bytes);
-    cutilSafeCall(cudaMemcpy(all_primes, d_all_primes, num_bytes, cudaMemcpyDeviceToHost));
-
+    // counting primes
     prime_counter = 0;
     for(uint64 i = llimit; i <= ulimit; i++)
-        if(GET_BIT(all_primes, i-llimit))
+        if(GET_BYTE(all_primes_gpu_result, i-llimit))
             prime_counter++;
     printf("GPU: %llu primes found between [%llu, %llu] in %f ms\n", prime_counter, llimit, ulimit, time_gpu);
-//     printf("\n");
+    free(all_primes_gpu_result);
 
-    for (uint32 i = 0; i < num_bytes; i += 15015)
-        memcpy(all_primes+i, precomputed_pattern, 15015);
 
+// reference solution by CPU
     cutilCheckError(cutStartTimer(timer_cpu));
     {
-        prime_counter = countPrimes_range(llimit, ulimit, precomputed_primes, all_primes);
+        countPrimes_range(llimit, ulimit, precomputed_primes, all_primes);
     }
     cutilCheckError(cutStopTimer(timer_cpu));
     float time_cpu = cutGetTimerValue(timer_cpu);
     cutilCheckError(cutDeleteTimer(timer_cpu));
 
-    free(all_primes);
+    // counting primes
+    prime_counter = 0;
+    for(uint64 i = llimit; i <= ulimit; i++)
+        if(GET_BYTE(all_primes, i-llimit))
+            prime_counter++;
     printf("CPU: %llu primes found between [%llu, %llu] in %f ms\n", prime_counter, llimit, ulimit, time_cpu);
+    free(all_primes);
 
     return 0;
 }

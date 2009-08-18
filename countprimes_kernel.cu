@@ -20,8 +20,12 @@ __global__ void primeKernel_1(uint64 llimit, uint64 ulimit, byte* all_primes, by
 
 //     printf("\n");
 //     for(uint64 i = llimit; i <= ulimit; i++)
-//         printf("%2llu : %u\n", i%120120, GET_BIT(d_precomputed_pattern, i-llimit));
-
+//         printf("%2llu : %u\n", i%120120, GET_BYTE(d_precomputed_pattern, i-llimit));
+//     uint64 prime_counter = 0;
+//     for(uint64 i = llimit; i <= ulimit; i++)
+//         if(GET_BYTE(all_primes, i-llimit))
+//             prime_counter++;
+//     printf("KERNEL: %llu primes found between [%llu, %llu]\n", prime_counter, llimit, ulimit);
 
     uint64 thisFactor = 17;
     uint64 mark;
@@ -33,7 +37,7 @@ __global__ void primeKernel_1(uint64 llimit, uint64 ulimit, byte* all_primes, by
         mark = first_multiple;
 //         printf("  thisFactor = %llu\n", thisFactor);
         while(mark <= ulimit) {
-            CLR_BIT(all_primes, mark-llimit);
+            CLR_BYTE(all_primes, mark-llimit);
 //             printf("    thisFactor=%llu, mark=%llu, (mark-llimit)=%llu, (mark-llimit)>>3=%llu\n", thisFactor, mark, mark-llimit, (mark-llimit)>>3);
             mark += thisFactor;
         }
@@ -43,12 +47,11 @@ __global__ void primeKernel_1(uint64 llimit, uint64 ulimit, byte* all_primes, by
     }
 
 
-//     uint64 prime_counter = 0;
+//     prime_counter = 0;
 //     for(uint64 i = llimit; i <= ulimit; i++)
-//         if(GET_BIT(all_primes, i-llimit))
+//         if(GET_BYTE(all_primes, i-llimit))
 //             prime_counter++;
-
-//     printf("DEVICE: %llu primes found between [%llu, %llu]\n", prime_counter, llimit, ulimit);
+//     printf("KERNEL: %llu primes found between [%llu, %llu]\n", prime_counter, llimit, ulimit);
 
 
 
