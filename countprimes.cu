@@ -6,14 +6,8 @@
 
 #include <cutil_inline.h>
 #include <countprimes_kernel.cu>
+#include <defs.h>
 
-
-#define SET_BIT(array, i) (array)[(i)>>3] |= 1<<((i)&0x07)
-#define CLR_BIT(array, i) (array)[(i)>>3] &= ~(1<<((i)&0x07))
-#define GET_BIT(array, i) ((array)[(i)>>3] & 1<<((i)&0x07)) >> ((i)&0x07)
-
-typedef  unsigned long long uint64;
-typedef  unsigned char byte;
 
 void findPrimes (uint64 ulimit, byte* array) {
     CLR_BIT(array, 1-1);
@@ -92,21 +86,37 @@ int main(int argc, char *argv[]) {
         printf("%llu primes found between [%llu, %llu]\n", prime_counter, llimit, precomputed_top);
     }
 
-    byte* precomputed_pattern = 0;    // pattern of marked non-primes which are multiple of (2,3,5,7,11,13)
+    byte* precomputed_pattern = 0;    // pattern of marked non-primes which are multiples of (2,3,5,7,11,13)
     precomputed_pattern = (byte*)malloc(15015);
-    llimit = 30031;
-    ulimit = 30031+120120-1;
-    markPrimesPattern(llimit, ulimit, 13, &precomputed_primes[0], &precomputed_pattern[0]);
-//     for(uint64 i = llimit; i <= ulimit; i++)
-//         printf("%2llu : %u\n", i, GET_BIT(precomputed_pattern, i-llimit));
-
+    markPrimesPattern(30031, 30031+120120-1, 13, &precomputed_primes[0], &precomputed_pattern[0]);
+//     for(uint64 i = 1; i <= 120120; i++)
+//         printf("%2llu : %u\n", i, GET_BIT(precomputed_pattern, i-1));
 
     // now using GPU...
 //     uint64 ll_gpu = precomputed_top+1;
 //     uint64 ul_gpu = ulimit;
-//     cutilSafeCall(cudaMemcpyToSymbol(d_bitarray, precomputed_primes, SIXTYFOUR_KB));
+    cutilSafeCall(cudaMemcpyToSymbol(d_precomputed_primes, precomputed_primes, SIXTYFOUR_KB));
+    // allocate device memory
+    byte* d_all_primes = 0;
+    unsigned int num_bytes = (ulimit-llimit+1)/8;
+    cutilSafeCall(cudaMalloc(&d_all_primes, num_bytes));
+    // copy host memory to device
+    for (unsigned int i = 0; i < num_bytes; i += 15015) {
+        cutilSafeCall(cudaMemcpy(d_all_primes+i, precomputed_pattern, 15015, cudaMemcpyHostToDevice));
+//         printf("i=%6u, i+15015=%6u\n", i, i+15015);
+    }
 
+    primeKernel_1<<<1, 1, 0>>>(llimit, ulimit, d_all_primes);
 
+    byte* all_primes = 0;
+    all_primes = (byte*)malloc(num_bytes);
+    cutilSafeCall(cudaMemcpy(all_primes, d_all_primes, num_bytes, cudaMemcpyDeviceToHost));
+
+    prime_counter = 0;
+    for(uint64 i = llimit; i <= ulimit; i++)
+        if(GET_BIT(all_primes, i-llimit))
+            prime_counter++;
+    printf("HOST: %llu primes found between [%llu, %llu]\n", prime_counter, llimit, ulimit);
 
     return 0;
 }
