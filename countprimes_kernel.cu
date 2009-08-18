@@ -10,9 +10,10 @@
 
 __device__ __constant__ unsigned char d_precomputed_primes[65536];
 
-__global__ void primeKernel_1(uint64 llimit, uint64 ulimit, byte* all_primes)
-
+__global__ void primeKernel_1(uint64 llimit, uint64 ulimit, byte* all_primes, byte cook)
 {
+    if(cook) return;
+
     // shared memory
     // the size is determined by the host application
     extern  __shared__  float sdata[];
@@ -39,15 +40,15 @@ __global__ void primeKernel_1(uint64 llimit, uint64 ulimit, byte* all_primes)
         do  // Search for the next prime divisor in precomputed_primes
             thisFactor++;
         while(GET_BIT(d_precomputed_primes, thisFactor-1) == 0);
-        assert(thisFactor <= ulimit);
     }
 
 
-    uint64 prime_counter = 0;
-    for(uint64 i = llimit; i <= ulimit; i++)
-        if(GET_BIT(all_primes, i-llimit))
-            prime_counter++;
-    printf("DEVICE: %llu primes found between [%llu, %llu]\n", prime_counter, llimit, ulimit);
+//     uint64 prime_counter = 0;
+//     for(uint64 i = llimit; i <= ulimit; i++)
+//         if(GET_BIT(all_primes, i-llimit))
+//             prime_counter++;
+
+//     printf("DEVICE: %llu primes found between [%llu, %llu]\n", prime_counter, llimit, ulimit);
 
 
 
