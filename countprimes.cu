@@ -33,36 +33,17 @@ void findPrimes (uint64 ulimit, byte* array) {
     }
 }
 
-void findPrimes_range (uint64 llimit, uint64 ulimit, byte* precomputed_primes, byte* array) {
-    for(uint64 i = llimit; i <= ulimit; i++)
-        SET_BIT(array, i-llimit);
-    uint64 thisFactor = 2;
-    uint64 mark;
-    while(thisFactor * thisFactor <= ulimit) {
-        mark = thisFactor;
-        printf("thisFactor = %llu\n", thisFactor);
-        while(mark <= ulimit) {
-//             printf("thisFactor=%llu, mark=%llu, mark-1=%llu, (mark-1)>>3=%llu\n", thisFactor, mark, mark-1, (mark-1)>>3);
-            CLR_BIT(array, mark-1);
-            mark += thisFactor;
-        }
-        // Search for the next prime divisor in precomputed_primes
-        do thisFactor++; while(GET_BIT(precomputed_primes, thisFactor-1) == 0);
-        assert(thisFactor <= ulimit);
-    }
-}
-
 void markPrimesPattern(uint64 llimit, uint64 ulimit, uint64 top_divisor, byte* precomputed_primes, byte* array) {
     for(uint64 i = llimit; i <= ulimit; i++)
         SET_BIT(array, i-llimit);
     uint64 thisFactor = 2;
     uint64 mark;
-    while(thisFactor <= top_divisor && thisFactor * thisFactor <= ulimit) {
+    while(thisFactor <= top_divisor && thisFactor*thisFactor <= ulimit) {
         mark = llimit - 1 + thisFactor;
-        printf("thisFactor = %llu\n", thisFactor);
+//         printf("thisFactor = %llu\n", thisFactor);
         while(mark <= ulimit) {
-            printf("  thisFactor=%llu, mark=%llu, (mark-llimit)=%llu, (mark-llimit)>>3=%llu\n", thisFactor, mark, mark-llimit, (mark-llimit)>>3);
             CLR_BIT(array, mark-llimit);
+//             printf("  thisFactor=%llu, mark=%llu, (mark-llimit)=%llu, (mark-llimit)>>3=%llu\n", thisFactor, mark, mark-llimit, (mark-llimit)>>3);
             mark += thisFactor;
         }
         do  // Search for the next prime divisor in precomputed_primes
@@ -92,39 +73,32 @@ int main(int argc, char *argv[]) {
 
     uint64 prime_counter = 0;
 
-//     if(ulimit <= precomputed_top) {
-//         printf("No need to use GPU...\n");
-//         prime_counter = 0;
-//         for(uint64 i = llimit; i <= ulimit; i++)
-//             if(GET_BIT(precomputed_primes, i-1))
-//                 prime_counter++;
-//         printf("%llu primes found between [%llu, %llu]\n", prime_counter, llimit, ulimit);
-//         return 0;
-//     }
-//
-//     if(llimit <= precomputed_top) {
-//         printf("counting some primes from the precomputed list...\n");
-//         prime_counter = 0;
-//         for(uint64 i = llimit; i <= precomputed_top; i++)
-//             if(GET_BIT(precomputed_primes, i-1))
-//                 prime_counter++;
-//         printf("%llu primes found between [%llu, %llu]\n", prime_counter, llimit, precomputed_top);
-//     }
+    if(ulimit <= precomputed_top) {
+        printf("No need to use GPU...\n");
+        prime_counter = 0;
+        for(uint64 i = llimit; i <= ulimit; i++)
+            if(GET_BIT(precomputed_primes, i-1))
+                prime_counter++;
+        printf("%llu primes found between [%llu, %llu]\n", prime_counter, llimit, ulimit);
+        return 0;
+    }
 
+    if(llimit <= precomputed_top) {
+        printf("counting some primes from the precomputed list...\n");
+        prime_counter = 0;
+        for(uint64 i = llimit; i <= precomputed_top; i++)
+            if(GET_BIT(precomputed_primes, i-1))
+                prime_counter++;
+        printf("%llu primes found between [%llu, %llu]\n", prime_counter, llimit, precomputed_top);
+    }
 
     byte* precomputed_pattern = 0;    // pattern of marked non-primes which are multiple of (2,3,5,7,11,13)
-    precomputed_pattern = (byte*)malloc(15015);    // pattern of marked non-primes which are multiple of (2,3,5,7,11,13)
-    llimit = 7;
-    ulimit = 78;
-    markPrimesPattern(llimit, ulimit, 3, &precomputed_primes[0], &precomputed_pattern[0]);
-
-    prime_counter = 0;
-    for(uint64 i = llimit; i <= ulimit; i++) {
-        printf("%u", GET_BIT(precomputed_pattern, i-1));
-        if(GET_BIT(precomputed_pattern, i-1))
-            prime_counter++;
-    }
-    printf("\n%llu primes found between [%llu, %llu]\n", prime_counter, llimit, ulimit);
+    precomputed_pattern = (byte*)malloc(15015);
+    llimit = 30031;
+    ulimit = 30031+120120-1;
+    markPrimesPattern(llimit, ulimit, 13, &precomputed_primes[0], &precomputed_pattern[0]);
+//     for(uint64 i = llimit; i <= ulimit; i++)
+//         printf("%2llu : %u\n", i, GET_BIT(precomputed_pattern, i-llimit));
 
 
     // now using GPU...
