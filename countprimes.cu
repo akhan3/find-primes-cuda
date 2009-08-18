@@ -140,11 +140,12 @@ int main(int argc, char *argv[]) {
     uint32 timer_gpu = 0; cutilCheckError(cutCreateTimer(&timer_gpu));
 
     // cook the kernel
-    primeKernel_1<<<1, 1, 0>>>(llimit, ulimit, d_all_primes, 1);
+    uint16 num_threads = 512;
+    primeKernel<<<1, num_threads>>>(llimit, ulimit, d_all_primes, num_threads, 1);
     cutilCheckError(cutStartTimer(timer_gpu));
     // launch the kernel
     {
-        primeKernel_1<<<1, 1, 0>>>(llimit, ulimit, d_all_primes, 0);
+        primeKernel<<<1, num_threads>>>(llimit, ulimit, d_all_primes, num_threads, 0);
         cutilCheckMsg("Kernel execution failed");
         cudaThreadSynchronize();
     }
