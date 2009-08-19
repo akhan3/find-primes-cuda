@@ -10,7 +10,11 @@
 
 __device__ __constant__ unsigned char d_precomputed_primes[65536];
 
-__global__ void primeKernel(uint64 llimit, uint64 ulimit, byte* g_all_primes, uint32 firstFactor, uint16 num_threads, byte cook)
+__global__ void primeKernel(    uint64 llimit, uint64 ulimit,
+                                byte* g_all_primes,
+                                uint32 firstFactor,
+                                uint32 num_bytes_pre,
+                                uint16 num_threads, byte cook   )
 {
     if(cook) return;
 
@@ -24,11 +28,15 @@ __global__ void primeKernel(uint64 llimit, uint64 ulimit, byte* g_all_primes, ui
     __shared__ uint64 first_multiple;
     uint64 mark;
 
+    uint32 lastFactor = (uint32)ceil((float)num_bytes_pre / gridDim.x) * (blockIdx.x+1) - 1;
+    if(blockIdx.x != 0)
+        firstFactor = (uint32)ceil((float)num_bytes_pre / gridDim.x) * blockIdx.x;
+
     if(threadIdx.x == 0)
         thisFactor = firstFactor;
     __syncthreads();
 
-    while(thisFactor <= sqrt_ulimit) {
+    while(thisFactor <= lastFactor) {
         if(threadIdx.x == 0) {
             first_multiple = llimit;
             while(first_multiple % thisFactor)

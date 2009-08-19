@@ -75,23 +75,33 @@ void countPrimes_range(uint64 llimit, uint64 ulimit, byte* precomputed_primes, u
 
 
 int main(int argc, char *argv[]) {
-    uint64 llimit, ulimit;  // upper and lower limits, both inclusive
-    float ll_float, ul_float;
-//     assert(argc == 3);
-//     sscanf(argv[1], "%f", &ll_float);
-//     sscanf(argv[2], "%f", &ul_float);
-uint32 num_bytes_pattern = 3*5*7*11*13*64;     // LCM of (2,3,5,7,11) and 8x64 (to align with 64-byte boundary)
-ll_float = num_bytes_pattern*1 + 1 + 0;
-ul_float = num_bytes_pattern*5 + 749261;
-    llimit = (ll_float < 2.0) ? (uint64)2 : (uint64)ll_float;
-    ulimit = (uint64)ul_float;
+    const uint32 num_bytes_pattern = 3*5*7*11*13*64;     // LCM(2,3,5,...initial primes and 8,64) (to align with 64-byte boundary)
+    const uint32 lastFactor_pre = 13;
+    const uint32 firstFactor_sieve = 17;
+
+    float ll_float, ul_float;   // upper and lower limits, both inclusive
+    assert(argc >= 3);
+    sscanf(argv[1], "%f", &ll_float);
+    sscanf(argv[2], "%f", &ul_float);
+    const uint16 num_threads = 64;
+    const uint16 num_mp = 2;
+//     if(argc >= 4)
+//         sscanf(argv[3], "%u", &num_threads);
+//     if(argc >= 5)
+//         sscanf(argv[4], "%u", &num_mp);
+
+// ll_float = num_bytes_pattern*1+1 + 0;
+// ul_float = num_bytes_pattern*4   + 2;
+    const uint64 llimit = (ll_float < 2.0) ? (uint64)2 : (uint64)ll_float;
+    const uint64 ulimit = (uint64)ul_float;
     assert(llimit <= ulimit);
     assert(ulimit <= (SIXTYFOUR_KB*8)*(SIXTYFOUR_KB*8)); // 2^38 = 274877906944
     printf("Counting primes in the interval [%llu, %llu]...\n", llimit, ulimit);
 
 // precomputing primes upto sqrt(ulimit)
-    uint32 precomputed_top = (uint32)(ceil(floor(sqrt((float)ulimit))/8.0)*8);
+    uint32 precomputed_top = (uint32)(ceil(floor(sqrt((float)ulimit))/(num_mp*8.0))*(num_mp*8));
     uint32 num_bytes_pre = (uint32)ceil(precomputed_top/8.0);   // 8 numbers per byte
+    printf("num_bytes_pre = %u Bytes, %.2fKB\n", num_bytes_pre, num_bytes_pre/1024.0);
     byte* precomputed_primes = NULL;
     precomputed_primes = (byte*)malloc(num_bytes_pre);          // bit-wise array
     assert(precomputed_primes != NULL);
@@ -111,8 +121,6 @@ ul_float = num_bytes_pattern*5 + 749261;
     }
 
 // precomputing pattern of non-primes which are multiples of (2,3,5,7,11)
-    const uint32 lastFactor_pre = 13;
-    const uint32 firstFactor_sieve = 17;
     byte* precomputed_pattern = NULL;           // byte-wise array
     precomputed_pattern = (byte*)malloc(num_bytes_pattern);
     assert(precomputed_pattern != NULL);
@@ -120,7 +128,7 @@ ul_float = num_bytes_pattern*5 + 749261;
     markPrimesPattern(1, num_bytes_pattern, lastFactor_pre, precomputed_primes, precomputed_pattern);   // call the function
     cutilCheckError(cutStopTimer(timer_pre));
     float time_pre = cutGetTimerValue(timer_pre);
-    printf("CPU: %fms taken and %u bytes to precompute primes between [1, %u] and marking the pattern [1, %u] \n", time_pre, num_bytes_pre, precomputed_top, num_bytes_pattern);
+    printf("CPU: %fms and %u bytes taken to precompute primes between [1, %u] and marking the pattern [1, %u] \n", time_pre, num_bytes_pre, precomputed_top, num_bytes_pattern);
 
 // CPU memory allocation and filling it with precomputed_pattern
     uint64 num_bytes = ulimit-llimit+1;
@@ -128,21 +136,24 @@ ul_float = num_bytes_pattern*5 + 749261;
     byte* all_primes = NULL;
     all_primes = (byte*)malloc(num_bytes);
     assert(all_primes != NULL);
-
-// int patternboundray_llimit = ((llimit-1) % num_bytes_pattern);
-// int llimit_patternboundray = num_bytes_pattern - patternboundray_llimit;
-// printf("llimit=%llu, num_bytes_pattern=%u, patternboundray_llimit=%u, llimit_patternboundray=%u\n", llimit, num_bytes_pattern, patternboundray_llimit, llimit_patternboundray);
-// // return 0;
-// if(patternboundray_llimit != 0)
-//     memcpy(all_primes, precomputed_pattern+patternboundray_llimit, llimit_patternboundray);
-
-    for(uint32 i = 0; i < num_bytes; i += num_bytes_pattern) {
-        fprintf(stderr, "**** i=%6u, i+num_bytes_pattern=%6u\n", i, i+num_bytes_pattern);
-        memcpy(all_primes+i, precomputed_pattern, num_bytes_pattern);
-   }
+    int patternboundray_llimit = ((llimit-1) % num_bytes_pattern);
+    int llimit_patternboundray = num_bytes_pattern - patternboundray_llimit;
+    //printf("llimit=%llu, num_bytes_pattern=%u, patternboundray_llimit=%u, llimit_patternboundray=%u\n", llimit, num_bytes_pattern, patternboundray_llimit, llimit_patternboundray);
+    uint32 start_address = 0;
+    if(patternboundray_llimit != 0) {
+        memcpy(all_primes, precomputed_pattern+patternboundray_llimit, llimit_patternboundray);
+        start_address = llimit_patternboundray;
+    }
+    for(uint32 i = start_address; i < num_bytes; i += num_bytes_pattern) {
+        //fprintf(stderr, "**** j=%2d, i=%7u, i+num_bytes_pattern=%7u\n", j, i, i+num_bytes_pattern);
+        if(i+num_bytes_pattern > num_bytes)
+            memcpy(all_primes+i, precomputed_pattern, num_bytes-i);
+        else
+            memcpy(all_primes+i, precomputed_pattern, num_bytes_pattern);
+    }
 
 // now using GPU...
-    // allocate device memory
+    // copy precomputed_primes in device constant memory
     cutilSafeCall(cudaMemcpyToSymbol(d_precomputed_primes, precomputed_primes, num_bytes_pre));
     byte* d_all_primes = NULL;
     cutilSafeCall(cudaMalloc(&d_all_primes, num_bytes));
@@ -151,12 +162,12 @@ ul_float = num_bytes_pattern*5 + 749261;
     cutilSafeCall(cudaMemcpy(d_all_primes, all_primes, num_bytes, cudaMemcpyHostToDevice));
     uint32 timer_gpu = 0; cutilCheckError(cutCreateTimer(&timer_gpu));
     // cook the kernel
-    uint16 num_threads = 64;
-    primeKernel<<<1, num_threads>>>(llimit, ulimit, d_all_primes, firstFactor_sieve, num_threads, 1);
+    printf("launcing kernel with %u blocks and %u threads...\n", num_mp, num_threads);
+    primeKernel<<<num_mp, num_threads>>>(llimit, ulimit, d_all_primes, firstFactor_sieve, num_bytes_pre, num_threads, 1);
     cutilCheckError(cutStartTimer(timer_gpu));
     // launch the kernel
     {
-        primeKernel<<<1, num_threads>>>(llimit, ulimit, d_all_primes, firstFactor_sieve, num_threads, 0);
+        primeKernel<<<num_mp, num_threads>>>(llimit, ulimit, d_all_primes, firstFactor_sieve, num_bytes_pre, num_threads, 0);
         cutilCheckMsg("Kernel execution failed");
         cudaThreadSynchronize();
     }
