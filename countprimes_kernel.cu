@@ -10,7 +10,7 @@
 
 __device__ __constant__ unsigned char d_precomputed_primes[65536];
 
-__global__ void primeKernel(uint64 llimit, uint64 ulimit, byte* g_all_primes, uint16 num_threads, byte cook)
+__global__ void primeKernel(uint64 llimit, uint64 ulimit, byte* g_all_primes, uint32 firstFactor, uint16 num_threads, byte cook)
 {
     if(cook) return;
 
@@ -25,7 +25,7 @@ __global__ void primeKernel(uint64 llimit, uint64 ulimit, byte* g_all_primes, ui
     uint64 mark;
 
     if(threadIdx.x == 0)
-        thisFactor = 17;
+        thisFactor = firstFactor;
     __syncthreads();
 
     while(thisFactor <= sqrt_ulimit) {

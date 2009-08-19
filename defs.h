@@ -9,7 +9,7 @@
 #define CLR_BYTE(array, i) array[i] = 0
 #define GET_BYTE(array, i) (byte)array[i]
 
-#define SIXTYFOUR_KB (uint32)65536
+#define SIXTYFOUR_KB (uint64)65536
 
 typedef  unsigned long long uint64;
 typedef  unsigned int uint32;
