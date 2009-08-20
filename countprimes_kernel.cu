@@ -27,20 +27,16 @@ __global__ void primeKernel(    const uint64 llimit, const uint64 ulimit,
     uint32 lastFactor;
     uint64 thisMark;
 
-    if(blockIdx.x != 0)
+    if(blockIdx.x != 0 && threadIdx.x == 0) {
         firstFactor = (uint32)ceil(num_bytes_pre*8.0f / gridDim.x) * blockIdx.x;
+        while(GET_BIT(d_precomputed_primes, firstFactor-1) == 0)
+            firstFactor++;   // Search for the next prime divisor in precomputed_primes
+    }
+    __syncthreads();
     if(threadIdx.x == 0)
         thisFactor = firstFactor;
     __syncthreads();
     lastFactor = (uint32)ceil(num_bytes_pre*8.0f / gridDim.x) * (blockIdx.x+1) - 1;
-
-//     if(threadIdx.x == 0) {
-//         printf("\n");
-//         printf("  KERNEL: blockIdx=%u\n", blockIdx.x);
-//         printf("  KERNEL: thisFactor=%u, lastFactor=%u\n", thisFactor, lastFactor);
-//         printf("\n");
-//     }
-//     __syncthreads();
 
     while(thisFactor <= lastFactor) {
         if(threadIdx.x == 0) {
@@ -54,12 +50,10 @@ __global__ void primeKernel(    const uint64 llimit, const uint64 ulimit,
 //         printf("KERNEL%u.%u: thisFactor=%u, first_multiple=%llu, thisMark=%llu\n", blockIdx.x, threadIdx.x, thisFactor, first_multiple, thisMark);
         while(thisMark <= ulimit) {
             CLR_BYTE(g_all_primes, thisMark-llimit);
-//             printf(" KERNEL%u.%u: thisFactor=%u, first_multiple=%llu, thisMark=%llu\n", blockIdx.x, threadIdx.x, thisFactor, first_multiple, thisMark);
-            //printf("KERNEL%u: thisFactor=%llu, thisMark=%llu, (thisMark-llimit)=%llu, (thisMark-llimit)>>3=%llu\n", blockIdx.x, thisFactor, thisMark, thisMark-llimit, (thisMark-llimit)>>3);
             thisMark += thisFactor*blockDim.x;
         }
-//         printf("KERNEL%u.%u: thisFactor=%u, first_multiple=%llu, thisMark=%llu\n", blockIdx.x, threadIdx.x, thisFactor, first_multiple, thisMark);
         __syncthreads();
+//         printf("KERNEL%u.%u: thisFactor=%u, first_multiple=%llu, thisMark=%llu\n", blockIdx.x, threadIdx.x, thisFactor, first_multiple, thisMark);
 
         if(threadIdx.x == 0) {
             do  // Search for the next prime divisor in precomputed_primes
