@@ -10,31 +10,37 @@
 
 __device__ __constant__ unsigned char d_precomputed_primes[65536];
 
-__global__ void primeKernel(    uint64 llimit, uint64 ulimit,
+__global__ void primeKernel(    const uint64 llimit, const uint64 ulimit,
                                 byte* g_all_primes,
                                 uint32 firstFactor,
-                                uint32 num_bytes_pre,
-                                uint16 num_threads, byte cook   )
+                                const uint32 num_bytes_pre,
+                                const uint32 sqrt_ulimit,
+                                const byte cook   )
 {
     if(cook) return;
 
-    // shared memory
-//     extern  __shared__  float sdata[];
+// shared memory
+    //extern  __shared__  float sdata[];
 
-//     const uint32 offset = threadIdx.x;
-
-    uint32 sqrt_ulimit = (uint32)ceil(sqrt((float)ulimit));
     __shared__ uint32 thisFactor;
     __shared__ uint64 first_multiple;
-    uint64 mark;
+    uint32 lastFactor;
+    uint64 thisMark;
 
-    uint32 lastFactor = (uint32)ceil((float)num_bytes_pre / gridDim.x) * (blockIdx.x+1) - 1;
     if(blockIdx.x != 0)
-        firstFactor = (uint32)ceil((float)num_bytes_pre / gridDim.x) * blockIdx.x;
-
+        firstFactor = (uint32)ceil(num_bytes_pre*8.0f / gridDim.x) * blockIdx.x;
     if(threadIdx.x == 0)
         thisFactor = firstFactor;
     __syncthreads();
+    lastFactor = (uint32)ceil(num_bytes_pre*8.0f / gridDim.x) * (blockIdx.x+1) - 1;
+
+//     if(threadIdx.x == 0) {
+//         printf("\n");
+//         printf("  KERNEL: blockIdx=%u\n", blockIdx.x);
+//         printf("  KERNEL: thisFactor=%u, lastFactor=%u\n", thisFactor, lastFactor);
+//         printf("\n");
+//     }
+//     __syncthreads();
 
     while(thisFactor <= lastFactor) {
         if(threadIdx.x == 0) {
@@ -44,14 +50,15 @@ __global__ void primeKernel(    uint64 llimit, uint64 ulimit,
         }
         __syncthreads();
 
-        mark = first_multiple + thisFactor*threadIdx.x;
-//         printf("  thisFactor = %llu\n", thisFactor);
-        while(mark <= ulimit) {
-            g_all_primes[mark-llimit] = 0;
-//             CLR_BYTE(g_all_primes, mark-llimit);
-//             printf("    thisFactor=%llu, mark=%llu, (mark-llimit)=%llu, (mark-llimit)>>3=%llu\n", thisFactor, mark, mark-llimit, (mark-llimit)>>3);
-            mark += thisFactor*blockDim.x;
+        thisMark = first_multiple + thisFactor*threadIdx.x;
+//         printf("KERNEL%u.%u: thisFactor=%u, first_multiple=%llu, thisMark=%llu\n", blockIdx.x, threadIdx.x, thisFactor, first_multiple, thisMark);
+        while(thisMark <= ulimit) {
+            CLR_BYTE(g_all_primes, thisMark-llimit);
+//             printf(" KERNEL%u.%u: thisFactor=%u, first_multiple=%llu, thisMark=%llu\n", blockIdx.x, threadIdx.x, thisFactor, first_multiple, thisMark);
+            //printf("KERNEL%u: thisFactor=%llu, thisMark=%llu, (thisMark-llimit)=%llu, (thisMark-llimit)>>3=%llu\n", blockIdx.x, thisFactor, thisMark, thisMark-llimit, (thisMark-llimit)>>3);
+            thisMark += thisFactor*blockDim.x;
         }
+//         printf("KERNEL%u.%u: thisFactor=%u, first_multiple=%llu, thisMark=%llu\n", blockIdx.x, threadIdx.x, thisFactor, first_multiple, thisMark);
         __syncthreads();
 
         if(threadIdx.x == 0) {

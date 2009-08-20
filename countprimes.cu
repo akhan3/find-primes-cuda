@@ -16,7 +16,7 @@ void findPrimes(uint64 ulimit, byte* array) {
         SET_BIT(array, i-1);
     uint64 thisFactor = 2;
     uint64 thisMark;
-    const uint32 sqrt_ulimit = (uint32)floor(sqrt((float)ulimit));
+    const uint32 sqrt_ulimit = (uint32)floor(sqrt((double)ulimit));
     while(thisFactor <= sqrt_ulimit) {
         thisMark = thisFactor + thisFactor;
         while(thisMark <= ulimit) {
@@ -34,7 +34,7 @@ void markPrimesPattern(uint64 llimit, uint64 ulimit, uint64 lastFactor, byte* pr
         SET_BYTE(array, i-llimit);
     uint64 thisFactor = 2;
     uint64 thisMark;
-    const uint32 sqrt_ulimit = (uint32)floor(sqrt((float)ulimit));
+    const uint32 sqrt_ulimit = (uint32)floor(sqrt((double)ulimit));
     while(thisFactor <= lastFactor && thisFactor <= sqrt_ulimit) {
         thisMark = llimit - 1 + thisFactor;
 //         printf("thisFactor = %llu\n", thisFactor);
@@ -53,7 +53,7 @@ void countPrimes_range(uint64 llimit, uint64 ulimit, byte* precomputed_primes, u
     assert(llimit >= 2);
     uint64 thisFactor = firstFactor;
     uint64 thisMark;
-    const uint32 sqrt_ulimit = (uint32)floor(sqrt((float)ulimit));
+    const uint32 sqrt_ulimit = (uint32)floor(sqrt((double)ulimit));
     while(thisFactor <= sqrt_ulimit) {
         thisMark = llimit;
         while(thisMark % thisFactor)
@@ -75,33 +75,27 @@ void countPrimes_range(uint64 llimit, uint64 ulimit, byte* precomputed_primes, u
 
 
 int main(int argc, char *argv[]) {
-    const uint32 num_bytes_pattern = 3*5*7*11*13*64;     // LCM(2,3,5,...initial primes and 8,64) (to align with 64-byte boundary)
+    const uint16 num_mp = 64;
+    const uint16 num_threads = 64;
     const uint32 lastFactor_pre = 13;
     const uint32 firstFactor_sieve = 17;
+    const uint32 num_bytes_pattern = 3*5*7*11*13*64;     // LCM(2,3,5,...initial primes and 8,64) (to align with 64-byte boundary)
 
-    float ll_float, ul_float;   // upper and lower limits, both inclusive
+    double ll_double, ul_double;   // upper and lower limits, both inclusive
     assert(argc >= 3);
-    sscanf(argv[1], "%f", &ll_float);
-    sscanf(argv[2], "%f", &ul_float);
-    const uint16 num_threads = 64;
-    const uint16 num_mp = 2;
-//     if(argc >= 4)
-//         sscanf(argv[3], "%u", &num_threads);
-//     if(argc >= 5)
-//         sscanf(argv[4], "%u", &num_mp);
-
-// ll_float = num_bytes_pattern*1+1 + 0;
-// ul_float = num_bytes_pattern*4   + 2;
-    const uint64 llimit = (ll_float < 2.0) ? (uint64)2 : (uint64)ll_float;
-    const uint64 ulimit = (uint64)ul_float;
+    sscanf(argv[1], "%lf", &ll_double);
+    sscanf(argv[2], "%lf", &ul_double);
+    const uint64 llimit = (ll_double < 2.0f) ? (uint64)2 : (uint64)ll_double;
+    const uint64 ulimit = (uint64)ul_double;
+    const uint32 sqrt_ulimit = (uint32)floor(sqrt((double)ulimit));
     assert(llimit <= ulimit);
     assert(ulimit <= (SIXTYFOUR_KB*8)*(SIXTYFOUR_KB*8)); // 2^38 = 274877906944
     printf("Counting primes in the interval [%llu, %llu]...\n", llimit, ulimit);
 
 // precomputing primes upto sqrt(ulimit)
-    uint32 precomputed_top = (uint32)(ceil(floor(sqrt((float)ulimit))/(num_mp*8.0))*(num_mp*8));
-    uint32 num_bytes_pre = (uint32)ceil(precomputed_top/8.0);   // 8 numbers per byte
-    printf("num_bytes_pre = %u Bytes, %.2fKB\n", num_bytes_pre, num_bytes_pre/1024.0);
+    uint32 precomputed_top = (uint32)(ceil(floor(sqrt((double)ulimit))/(num_mp*8.0f))*(num_mp*8));
+    uint32 num_bytes_pre = (uint32)ceil(precomputed_top/8.0f);   // 8 numbers per byte
+    printf("num_bytes_pre = %u Bytes, %.2fKB\n", num_bytes_pre, num_bytes_pre/1024.0f);
     byte* precomputed_primes = NULL;
     precomputed_primes = (byte*)malloc(num_bytes_pre);          // bit-wise array
     assert(precomputed_primes != NULL);
@@ -132,7 +126,7 @@ int main(int argc, char *argv[]) {
 
 // CPU memory allocation and filling it with precomputed_pattern
     uint64 num_bytes = ulimit-llimit+1;
-    printf("num_bytes = %llu, %.2fMB\n", num_bytes, num_bytes/1024.0/1024.0);
+    printf("num_bytes = %llu, %.2fMB\n", num_bytes, num_bytes/1024.0f/1024.0f);
     byte* all_primes = NULL;
     all_primes = (byte*)malloc(num_bytes);
     assert(all_primes != NULL);
@@ -162,12 +156,12 @@ int main(int argc, char *argv[]) {
     cutilSafeCall(cudaMemcpy(d_all_primes, all_primes, num_bytes, cudaMemcpyHostToDevice));
     uint32 timer_gpu = 0; cutilCheckError(cutCreateTimer(&timer_gpu));
     // cook the kernel
-    printf("launcing kernel with %u blocks and %u threads...\n", num_mp, num_threads);
-    primeKernel<<<num_mp, num_threads>>>(llimit, ulimit, d_all_primes, firstFactor_sieve, num_bytes_pre, num_threads, 1);
+    printf("launching kernel with %u blocks and %u threads...\n", num_mp, num_threads);
+    primeKernel<<<num_mp, num_threads>>>(llimit, ulimit, d_all_primes, firstFactor_sieve, num_bytes_pre, sqrt_ulimit, 1);
     cutilCheckError(cutStartTimer(timer_gpu));
     // launch the kernel
     {
-        primeKernel<<<num_mp, num_threads>>>(llimit, ulimit, d_all_primes, firstFactor_sieve, num_bytes_pre, num_threads, 0);
+        primeKernel<<<num_mp, num_threads>>>(llimit, ulimit, d_all_primes, firstFactor_sieve, num_bytes_pre, sqrt_ulimit, 0);
         cutilCheckMsg("Kernel execution failed");
         cudaThreadSynchronize();
     }
@@ -187,7 +181,7 @@ int main(int argc, char *argv[]) {
     printf("GPU: %llu primes found between [%llu, %llu] in %f ms\n", prime_counter, llimit, ulimit, time_gpu);
     free(all_primes_gpu_result);
 
-
+#if 0
 // reference solution by CPU
     uint32 timer_cpu = 0;
     cutilCheckError(cutCreateTimer(&timer_cpu));
@@ -204,6 +198,7 @@ int main(int argc, char *argv[]) {
             prime_counter++;
     printf("CPU: %llu primes found between [%llu, %llu] in %f ms\n", prime_counter, llimit, ulimit, time_cpu);
     free(all_primes);
+#endif
 
     return 0;
 }
