@@ -11,6 +11,8 @@
 
 #define CONSTANT_MEM_SIZE (uint64)65536
 
+#define NEWLINE printf("\n")
+
 typedef  unsigned long long uint64;
 typedef  unsigned int uint32;
 typedef  unsigned short uint16;
