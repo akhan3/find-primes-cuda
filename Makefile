@@ -45,7 +45,7 @@ CU_DEPS		:= \
 CCFILES		:= \
 # 	countprimes_golden.cpp \
 
-# NVCCFLAGS	:= --keep
+NVCCFLAGS	:= 
 
 ################################################################################
 # Rules and targets
