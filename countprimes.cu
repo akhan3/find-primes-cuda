@@ -10,7 +10,7 @@
 #include <defs.h>
 
 
-uint32 findPrimes(uint32 ulimit, byte* array) {
+uint32 findPrimes(uint32 ulimit, byte *array, uint32 *array_out) {
     CLR_BYTE(array, 1-1);
     for(uint32 i = 2; i <= ulimit; i++)
         SET_BYTE(array, i-1);
@@ -27,10 +27,14 @@ uint32 findPrimes(uint32 ulimit, byte* array) {
             thisFactor++; 
         while(GET_BYTE(array, thisFactor-1) == 0);
     }
+    // counting and saving primes in integer array
     uint32 prime_count = 0;
     for(uint32 i = 1; i <= ulimit; i++)
-        if(GET_BYTE(array, i-1))
+        if(GET_BYTE(array, i-1)) {
+            array_out[prime_count] = i;
+            //printf("%d: %d\n", prime_count, array_out[prime_count]);
             prime_count++;
+    }
     return prime_count;
 }
 
@@ -53,25 +57,23 @@ void markPrimesPattern(uint32 ulimit, uint32 lastFactor, byte* precomputed_prime
 }
 
 void countPrimes(   const uint32 ulimit,  
-                    const byte* precomputed_primes,
-                    const uint32 firstFactor,
+                    const uint32 *primeFactors,
+                    const uint32 primeFactors_count,
+                    const uint32 firstFactor_index,
                     byte* array     )
 {
-    const uint32 sqrt_ulimit = (uint32)floor(sqrt((double)ulimit));
-    //printf("GOLDEN: [1, %u] %u %u\n", ulimit, firstFactor, sqrt_ulimit);
-    uint32 thisFactor = firstFactor;
-    while(thisFactor <= sqrt_ulimit) {
-        //printf("GOLDEN: thisFactor=%u, sqrt_ulimit=%u\n", thisFactor, sqrt_ulimit);
-        uint32 thisMark = 2;
+    uint32 primeFactors_index = firstFactor_index;
+    uint32 thisFactor = primeFactors[primeFactors_index];
+    while(primeFactors_index < primeFactors_count) {
+        uint32 thisMark = thisFactor * thisFactor;
         while(thisMark % thisFactor)
             thisMark++;
         while(thisMark <= ulimit) {
             CLR_BYTE(array, thisMark-1);
             thisMark += thisFactor;
         }
-        do  // Search for the next prime divisor in precomputed_primes
-            thisFactor++;
-        while(GET_BYTE(precomputed_primes, thisFactor-1) == 0);
+        primeFactors_index++;
+        thisFactor = primeFactors[primeFactors_index];
     }
 }
 
@@ -79,7 +81,7 @@ void countPrimes(   const uint32 ulimit,
 int main(int argc, char *argv[]) {
 
 // GPU specific information
-    const uint16 num_threads = 128;
+    uint16 num_threads = 128;
     uint16 num_blocks = 30*512;
     
 // read command line arguments and set up upper limit
@@ -89,29 +91,36 @@ int main(int argc, char *argv[]) {
     if(argc == 3)
         sscanf(argv[2], "%hu", &num_blocks);
 
+    #ifdef __DEVICE_EMULATION__
+    num_threads = 4;
+    num_blocks = 10;
+    #endif
+
     const uint32 llimit = 1;
     const uint32 ulimit = (uint32)ul_double;
     const uint32 sqrt_ulimit = (uint32)floor(sqrt((double)ulimit));
     assert(llimit <= ulimit);
+    assert(ulimit <= 1000000000);   // 1e9
     assert(ulimit <= CONSTANT_MEM_SIZE*CONSTANT_MEM_SIZE); // 2^32 = 4294967296 = 4.29e10
     printf("Counting primes less than %u...\n", ulimit);
     printf("sqrt(%u) = %u\n", ulimit, sqrt_ulimit);
 
 // setting up precomputed primes
     const uint32 lastFactor_pre = 13;
-    const uint32 firstFactor_sieve = 17;
+    // const uint32 firstFactor_sieve = 17;
     // LCM(2,3,5,7,11,13, 64) (to align with 64-byte boundary of device memory)
     const uint32 num_bytes_pattern = 960960;
 
 // precomputing primes upto sqrt(ulimit)
-    //const uint32 num_bytes_pre = (uint32) ceil(sqrt_ulimit/8.0);  // 8 numbers per byte
-    byte* precomputed_primes = NULL;
+    byte *precomputed_primes = NULL;
+    uint32 *primeFactors = NULL;
     precomputed_primes = (byte*)malloc(sqrt_ulimit);    // byte-wise array
-    assert(precomputed_primes != NULL);
+    primeFactors = (uint32*)malloc(3401 * sizeof(uint32));    // pi(sqrt_ulimit) = 3401
+    assert(precomputed_primes != NULL && primeFactors != NULL);
     uint32 timer_pre = 0;
     cutilCheckError(cutCreateTimer(&timer_pre));
     cutilCheckError(cutStartTimer(timer_pre));
-    uint32 prime_precounter = findPrimes(sqrt_ulimit, precomputed_primes);    // call the function
+    uint32 prime_precounter = findPrimes(sqrt_ulimit, precomputed_primes, primeFactors);    // call the function
     cutilCheckError(cutStopTimer(timer_pre));
     printf("%u primes found from the precomputed list [1, %u]\n", prime_precounter, sqrt_ulimit);
 
@@ -128,7 +137,7 @@ int main(int argc, char *argv[]) {
 
 // CPU memory allocation and filling it with precomputed_pattern
     uint32 num_bytes = ulimit-llimit+1;
-    printf("num_bytes = %u, %.2fMB\n", num_bytes, num_bytes/1024.0/1024.0);
+    // printf("num_bytes = %u, %.2fMB\n", num_bytes, num_bytes/1024.0/1024.0);
     byte* all_primes = NULL;
     all_primes = (byte*)malloc(num_bytes);
     assert(all_primes != NULL);    
@@ -138,11 +147,22 @@ int main(int argc, char *argv[]) {
         else
             memcpy(all_primes+i, precomputed_pattern, num_bytes_pattern);
     }
-    CLR_BYTE(all_primes, 1-1);  // mark 1 as non-prime (exceptional case)
+    // mark 1 as non-prime (special case)
+    CLR_BYTE(all_primes, 1-1);
+    // mark primes under sqrt_ulimit
+    for(int i = 0; i < prime_precounter; i++)
+        SET_BYTE(all_primes, primeFactors[i]-1);
+    
+
+    // for(int i = 1; i <= ulimit; i++)
+        // printf("%s%d%s\n", all_primes[i-1] ? "      " : "------", i, 
+                           // all_primes[i-1] ? "      " : "------");
+    // return EXIT_SUCCESS;
+    
 
 // now using GPU...
-    // copy precomputed_primes in device constant memory
-    cutilSafeCall(cudaMemcpyToSymbol(d_precomputed_primes, precomputed_primes, sqrt_ulimit));
+    // copy primeFactors in device constant memory
+    cutilSafeCall(cudaMemcpyToSymbol(d_primeFactors, primeFactors, prime_precounter*sizeof(uint32)));
     //cutilSafeCall(cudaMemcpyToSymbol((char*)&ulimit_constmem, (char*)&ulimit, sizeof(ulimit)));
     byte* d_all_primes = NULL;
     cutilSafeCall(cudaMalloc(&d_all_primes, num_bytes));
@@ -152,11 +172,11 @@ int main(int argc, char *argv[]) {
     uint32 timer_gpu_kernel = 0; cutilCheckError(cutCreateTimer(&timer_gpu_kernel));
     // cook the kernel
     printf("launching kernel with %u blocks and %u threads...\n", num_blocks, num_threads);
-    primeKernel<<<num_blocks, num_threads>>>(ulimit, d_all_primes, sqrt_ulimit, 1);
+    primeKernel<<<num_blocks, num_threads>>>(ulimit, d_all_primes, prime_precounter, 1);
     cutilCheckError(cutStartTimer(timer_gpu_kernel));
     // launch the kernel
     {
-        primeKernel<<<num_blocks, num_threads>>>(ulimit, d_all_primes, sqrt_ulimit, 0);
+        primeKernel<<<num_blocks, num_threads>>>(ulimit, d_all_primes, prime_precounter, 0);
         cutilCheckMsg("Kernel execution failed");
         cudaThreadSynchronize();
         //byte dummy_ptr;
@@ -170,7 +190,7 @@ int main(int argc, char *argv[]) {
     cutilSafeCall(cudaMemcpy(all_primes_gpu_result, d_all_primes, num_bytes, cudaMemcpyDeviceToHost));
     // counting primes
     uint32 prime_counter_gpu;
-    prime_counter_gpu = prime_precounter;
+    prime_counter_gpu = 0;
     for(uint32 i = llimit; i <= ulimit; i++)
         if(GET_BYTE(all_primes_gpu_result, i-llimit))
             prime_counter_gpu++;
@@ -183,12 +203,12 @@ int main(int argc, char *argv[]) {
     cutilCheckError(cutCreateTimer(&timer_cpu_kernel));
     cutilCheckError(cutStartTimer(timer_cpu_kernel));
     {
-        countPrimes(ulimit, precomputed_primes, firstFactor_sieve, all_primes);
+        countPrimes(ulimit, primeFactors, prime_precounter, 6, all_primes);
     }
     cutilCheckError(cutStopTimer(timer_cpu_kernel));
     float time_cpu_kernel = cutGetTimerValue(timer_cpu_kernel);
     // counting primes
-    uint32 prime_counter = prime_precounter;
+    uint32 prime_counter = 0;
     for(uint32 i = llimit; i <= ulimit; i++)
         if(GET_BYTE(all_primes, i-llimit)) 
             prime_counter++;
